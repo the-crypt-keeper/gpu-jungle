@@ -75,14 +75,13 @@ def stop_monitor_gpu(process):
     process.terminate()
     process.wait()
 
-def prepare_tests(device_ids, engine_config, gpu_info_list):
+def prepare_tests(device_ids, engine, engine_config, gpu_info_list):
     tests = engine_config.get('tests', [])
     common = engine_config.get('common', {})
     
-    prepared_tests = []
+    jobs = []
     for test in tests:
         test_copy = common.copy()
-        print(test_copy, test)
         test_copy.update(test)
         
         if '_min_vram' in test_copy:
@@ -92,22 +91,29 @@ def prepare_tests(device_ids, engine_config, gpu_info_list):
             if total_vram < min_vram:
                 print("Skipping test '{}' due to insufficient VRAM.".format(test_copy.get('_name', 'Unnamed')))
                 continue
+
+        job_kvs = ['test']
+        for k,v in test_copy.items(): 
+            if k[0] != '_': job_kvs.extend([k,str(v)])
+        test_copy['job_name'] = '_'.join(job_kvs)
+        test_copy['engine'] = engine
         
         test_copy['device_ids'] = device_ids
-        prepared_tests.append(test_copy)
+        jobs.append(test_copy)
     
-    return prepared_tests
+    return jobs
 
-def execute_test(engine, log_file, test):
-    print("execute_test", engine, json.dumps(test))
+def execute_job(job, log_file):
+    engine = job['engine']
+    print("execute_job", json.dumps(job))
     
     # Convert test object to JSON and write it to a temporary file
     temp_json_file = "temp_test.json"
     with open(temp_json_file, "w") as f:
-        json.dump(test, f, indent=4)
+        json.dump(job, f, indent=4)
 
     # Convert device_ids to comma-separated list
-    device_csv = ','.join(map(str, test['device_ids']))
+    device_csv = ','.join(map(str, job['device_ids']))
 
     # Execute the test command and write output to both screen and log file
     command = [f"{engine}/run.sh", device_csv, temp_json_file]
@@ -167,19 +173,19 @@ def run_quick_tests():
             {'_name': 'Test2', 'parameter1': 'override'}
         ]
     }
-    prepared_tests = prepare_tests([4], engine_config, gpu_info_list)
+    prepared_tests = prepare_tests([4], 'transformers', engine_config, gpu_info_list)
     for test in prepared_tests:
-        execute_test('transformers', 'test.log', test)
+        execute_job('transformers', 'test.log', test)
 
-def main(config_file:str, min_temp:int = 50):
+def main(config_file:str, min_temp:int = 60):
     for config in yaml.safe_load(open(config_file).read()):
         gpu_info_list = get_gpu_info()
         device_ids_list = gpu_schedule(config['gpus'], gpu_info_list)
 
         for device_ids in device_ids_list:
             for engine, ecfg in config['engines'].items():
-                tests = prepare_tests(device_ids, ecfg, gpu_info_list)
-                for test in tests:
+                jobs = prepare_tests(device_ids, engine, ecfg, gpu_info_list)
+                for job in jobs:
                     gpu_info_list = get_gpu_info()
                     while not gpu_temperature_check(device_ids, gpu_info_list, min_temp):
                         print(f"Waiting for all GPUs to reach {min_temp}C...")
@@ -191,9 +197,10 @@ def main(config_file:str, min_temp:int = 50):
                         dmons.append(start_monitor_gpu(device, f"dmon_{device}.log"))
                     
                     try:
-                        execute_test(engine, f"{engine}.log", test)
+                        execute_job(job, f"{engine}.log")
                     except Exception as e:
-                        print('Failed to execute test', test, str(e))
+                        print('Failed to execute job:', json.dumps(job))
+                        print(str(e))
                     
                     for monitor in dmons: stop_monitor_gpu(monitor)       
     
