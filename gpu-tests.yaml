@@ -1,0 +1,38 @@
+- gpus:
+    - { "RTX 3060": [0] }
+  engines:
+    transformers:
+        tests:
+          - model: "path"
+
+- gpus:
+    - { "RTX 3060": [0] }
+    - { "P40": [0] }
+    - { "P100": [0] }
+    - { "RTX 3060": [0], "P40": [0,1] }
+    - { "RTX 3060": [0], "P100": [0,1] }
+  engines:
+    transformers:
+      common:
+        model: path
+      tests:
+        - quant: "fp16"
+          _min_vram: 16
+        - quant: "int4"
+        - quant: "int8"
+    llamacpp:
+      tests:
+        - model: path
+    vllm:
+      tests:
+        - model: path
+          num_prompts: 16
+          output_len: 256
+
+## KPIs
+# LT
+# PP:256 TG:0
+# PP:2048 TG:0
+# PP:0 TG:256
+# PP:2048 TG:256
+# poll: nvidia-smi dmon -s petm
