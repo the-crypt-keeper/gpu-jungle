@@ -137,6 +137,7 @@ def run_quick_tests():
         print("Device Name:", gpu_info['device_name'], "Index:", gpu_info['device_index'])
         print("Total Memory:", gpu_info['total_memory']/(1024*1024), "MB")
         print("Temperature:", gpu_info['temperature'], "C\n")
+    # return
 
     # Example configurations
     config = [
@@ -177,7 +178,11 @@ def run_quick_tests():
     for test in prepared_tests:
         execute_job('transformers', 'test.log', test)
 
-def main(config_file:str, min_temp:int = 60):
+def main(config_file:str, max_temp:int = 60, test:bool = False):
+    if test:
+        run_quick_tests()
+        return
+    
     for config in yaml.safe_load(open(config_file).read()):
         gpu_info_list = get_gpu_info()
         device_ids_list = gpu_schedule(config['gpus'], gpu_info_list)
@@ -187,8 +192,8 @@ def main(config_file:str, min_temp:int = 60):
                 jobs = prepare_tests(device_ids, engine, ecfg, gpu_info_list)
                 for job in jobs:
                     gpu_info_list = get_gpu_info()
-                    while not gpu_temperature_check(device_ids, gpu_info_list, min_temp):
-                        print(f"Waiting for all GPUs to reach {min_temp}C...")
+                    while not gpu_temperature_check(device_ids, gpu_info_list, max_temp):
+                        print(f"Waiting for all GPUs to reach {max_temp}C...")
                         time.sleep(10)
                         gpu_info_list = get_gpu_info()
 
@@ -197,7 +202,7 @@ def main(config_file:str, min_temp:int = 60):
                         dmons.append(start_monitor_gpu(device, f"dmon_{device}.log"))
                     
                     try:
-                        execute_job(job, f"{engine}.log")
+                        execute_job(job, f"{engine}_{job['job_name']}.log")
                     except Exception as e:
                         print('Failed to execute job:', json.dumps(job))
                         print(str(e))
